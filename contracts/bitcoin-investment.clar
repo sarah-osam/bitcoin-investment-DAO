@@ -75,6 +75,13 @@
     )
 )
 
+(define-private (is-valid-bool (input bool))
+    (or 
+        (is-eq input true)
+        (is-eq input false)
+    )
+)
+
 (define-private (validate-string-ascii (input (string-ascii 500)))
     (and 
         (not (is-eq input ""))
@@ -90,18 +97,9 @@
 )
 
 (define-private (validate-vote (vote-value bool))
-    (let 
-        (
-            (true-value true)
-            (false-value false)
-        )
-        (if (is-eq vote-value true-value)
-            (ok true-value)
-            (if (is-eq vote-value false-value)
-                (ok false-value)
-                ERR-INVALID-VOTE
-            )
-        )
+    (if (is-valid-bool vote-value)
+        (ok vote-value)
+        ERR-INVALID-VOTE
     )
 )
 
@@ -219,34 +217,33 @@
         (asserts! (<= block-height (get end-block proposal)) ERR-PROPOSAL-EXPIRED)
         (asserts! (is-none (map-get? votes {proposal-id: proposal-id, voter: tx-sender})) ERR-ALREADY-VOTED)
         
-        ;; Strict vote validation
-        (match (validate-vote vote-for)
-            validated-vote 
-                (begin
-                    ;; Record the vote with known valid value
-                    (map-set votes 
-                        {proposal-id: proposal-id, voter: tx-sender} 
-                        {vote: (is-eq validated-vote true)}
-                    )
-                    
-                    ;; Update vote counts using the validated boolean
-                    (map-set proposals proposal-id 
-                        (merge proposal 
-                            {
-                                yes-votes: (if (is-eq validated-vote true)
-                                    (+ (get yes-votes proposal) voter-power)
-                                    (get yes-votes proposal)
-                                ),
-                                no-votes: (if (is-eq validated-vote true)
-                                    (get no-votes proposal)
-                                    (+ (get no-votes proposal) voter-power)
-                                )
-                            }
+        ;; Type check before validation
+        (asserts! (is-valid-bool vote-for) ERR-INVALID-VOTE)
+        
+        ;; Vote processing with verified input
+        (let ((safe-vote (is-eq vote-for true)))
+            ;; Record the vote
+            (map-set votes 
+                {proposal-id: proposal-id, voter: tx-sender} 
+                {vote: safe-vote}
+            )
+            
+            ;; Update vote counts
+            (map-set proposals proposal-id 
+                (merge proposal 
+                    {
+                        yes-votes: (if safe-vote
+                            (+ (get yes-votes proposal) voter-power)
+                            (get yes-votes proposal)
+                        ),
+                        no-votes: (if safe-vote
+                            (get no-votes proposal)
+                            (+ (get no-votes proposal) voter-power)
                         )
-                    )
-                    (ok true)
+                    }
                 )
-            error ERR-INVALID-VOTE
+            )
+            (ok true)
         )
     ))
 )
