@@ -3,11 +3,10 @@
 ;; Summary:
 ;; This smart contract implements a decentralized autonomous organization (DAO) for managing Bitcoin investments.
 ;; It allows members to stake tokens, create and vote on proposals, and execute approved proposals.
-; The contract includes mechanisms for validating inputs, managing member stakes, and ensuring proposals meet quorum requirements.
+;; The contract includes mechanisms for validating inputs, managing member stakes, and ensuring proposals meet quorum requirements.
 
 ;; Description:
 ;; The Bitcoin Investment DAO smart contract is designed to facilitate decentralized decision-making and fund management.
-
 
 ;; Constants
 (define-constant ERR-NOT-AUTHORIZED (err u100))
@@ -22,7 +21,7 @@
 (define-constant ERR-INVALID-TITLE (err u109))
 (define-constant ERR-INVALID-DESCRIPTION (err u110))
 (define-constant ERR-INVALID-RECIPIENT (err u111))
-(define-constant ERR-INVALID-VOTE (err u112)) 
+(define-constant ERR-INVALID-VOTE (err u112))
 
 ;; Data Variables
 (define-data-var dao-owner principal tx-sender)
@@ -91,7 +90,19 @@
 )
 
 (define-private (validate-vote (vote-value bool))
-    (ok vote-value)
+    (let 
+        (
+            (true-value true)
+            (false-value false)
+        )
+        (if (is-eq vote-value true-value)
+            (ok true-value)
+            (if (is-eq vote-value false-value)
+                (ok false-value)
+                ERR-INVALID-VOTE
+            )
+        )
+    )
 )
 
 (define-private (get-proposal-status (proposal-id uint))
@@ -200,32 +211,43 @@
     (let (
         (proposal (unwrap! (map-get? proposals proposal-id) ERR-PROPOSAL-NOT-FOUND))
         (voter-power (calculate-voting-power tx-sender))
-        (validated-vote (unwrap! (validate-vote vote-for) ERR-INVALID-VOTE))
     )
     (begin
+        ;; Input and state validation
         (asserts! (is-member tx-sender) ERR-NOT-AUTHORIZED)
         (asserts! (is-eq (get status proposal) "ACTIVE") ERR-PROPOSAL-NOT-ACTIVE)
         (asserts! (<= block-height (get end-block proposal)) ERR-PROPOSAL-EXPIRED)
         (asserts! (is-none (map-get? votes {proposal-id: proposal-id, voter: tx-sender})) ERR-ALREADY-VOTED)
         
-        ;; Use the validated vote value
-        (map-set votes {proposal-id: proposal-id, voter: tx-sender} {vote: validated-vote})
-        
-        (map-set proposals proposal-id 
-            (merge proposal 
-                {
-                    yes-votes: (if validated-vote 
-                        (+ (get yes-votes proposal) voter-power)
-                        (get yes-votes proposal)
-                    ),
-                    no-votes: (if validated-vote 
-                        (get no-votes proposal)
-                        (+ (get no-votes proposal) voter-power)
+        ;; Strict vote validation
+        (match (validate-vote vote-for)
+            validated-vote 
+                (begin
+                    ;; Record the vote with known valid value
+                    (map-set votes 
+                        {proposal-id: proposal-id, voter: tx-sender} 
+                        {vote: (is-eq validated-vote true)}
                     )
-                }
-            )
+                    
+                    ;; Update vote counts using the validated boolean
+                    (map-set proposals proposal-id 
+                        (merge proposal 
+                            {
+                                yes-votes: (if (is-eq validated-vote true)
+                                    (+ (get yes-votes proposal) voter-power)
+                                    (get yes-votes proposal)
+                                ),
+                                no-votes: (if (is-eq validated-vote true)
+                                    (get no-votes proposal)
+                                    (+ (get no-votes proposal) voter-power)
+                                )
+                            }
+                        )
+                    )
+                    (ok true)
+                )
+            error ERR-INVALID-VOTE
         )
-        (ok true)
     ))
 )
 
