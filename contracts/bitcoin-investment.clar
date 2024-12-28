@@ -159,3 +159,72 @@
         (ok true)
     ))
 )
+
+;; Proposal Functions
+(define-public (create-proposal (title (string-ascii 100)) 
+                              (description (string-ascii 500)) 
+                              (amount uint)
+                              (recipient principal))
+    (let (
+        (proposal-id (+ (var-get proposal-count) u1))
+        (proposer-stake (calculate-voting-power tx-sender))
+    )
+    (begin
+        ;; Input validation
+        (asserts! (>= proposer-stake (var-get min-proposal-amount)) ERR-NOT-AUTHORIZED)
+        (asserts! (>= amount u0) ERR-INVALID-AMOUNT)
+        (asserts! (validate-string-ascii title) ERR-INVALID-TITLE)
+        (asserts! (validate-string-ascii description) ERR-INVALID-DESCRIPTION)
+        (asserts! (validate-principal recipient) ERR-INVALID-RECIPIENT)
+        
+        (map-set proposals proposal-id {
+            proposer: tx-sender,
+            title: title,
+            description: description,
+            amount: amount,
+            recipient: recipient,
+            start-block: block-height,
+            end-block: (+ block-height (var-get proposal-duration)),
+            yes-votes: u0,
+            no-votes: u0,
+            status: "ACTIVE",
+            executed: false
+        })
+        
+        (var-set proposal-count proposal-id)
+        (ok proposal-id)
+    ))
+)
+
+(define-public (vote (proposal-id uint) (vote-for bool))
+    (let (
+        (proposal (unwrap! (map-get? proposals proposal-id) ERR-PROPOSAL-NOT-FOUND))
+        (voter-power (calculate-voting-power tx-sender))
+        (validated-vote (unwrap! (validate-vote vote-for) ERR-INVALID-VOTE))
+    )
+    (begin
+        (asserts! (is-member tx-sender) ERR-NOT-AUTHORIZED)
+        (asserts! (is-eq (get status proposal) "ACTIVE") ERR-PROPOSAL-NOT-ACTIVE)
+        (asserts! (<= block-height (get end-block proposal)) ERR-PROPOSAL-EXPIRED)
+        (asserts! (is-none (map-get? votes {proposal-id: proposal-id, voter: tx-sender})) ERR-ALREADY-VOTED)
+        
+        ;; Use the validated vote value
+        (map-set votes {proposal-id: proposal-id, voter: tx-sender} {vote: validated-vote})
+        
+        (map-set proposals proposal-id 
+            (merge proposal 
+                {
+                    yes-votes: (if validated-vote 
+                        (+ (get yes-votes proposal) voter-power)
+                        (get yes-votes proposal)
+                    ),
+                    no-votes: (if validated-vote 
+                        (get no-votes proposal)
+                        (+ (get no-votes proposal) voter-power)
+                    )
+                }
+            )
+        )
+        (ok true)
+    ))
+)
