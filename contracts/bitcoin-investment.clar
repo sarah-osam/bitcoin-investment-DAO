@@ -268,3 +268,25 @@
         )
     ))
 )
+
+;; Read-only Functions
+(define-read-only (get-member-info (address principal))
+    (map-get? members address)
+)
+
+(define-read-only (get-proposal-info (proposal-id uint))
+    (map-get? proposals proposal-id)
+)
+
+(define-read-only (get-vote-info (proposal-id uint) (voter principal))
+    (map-get? votes {proposal-id: proposal-id, voter: voter})
+)
+
+(define-read-only (get-dao-info)
+    {
+        total-staked: (var-get total-staked),
+        proposal-count: (var-get proposal-count),
+        quorum-threshold: (var-get quorum-threshold),
+        min-proposal-amount: (var-get min-proposal-amount)
+    }
+)
